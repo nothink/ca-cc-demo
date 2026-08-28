@@ -1,0 +1,41 @@
+name: Issue to PR (Loop Engineering - Implement)
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  implement:
+    if: github.event.label.name == 'loop-engineering'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          label_trigger: "loop-engineering"
+          branch_prefix: "claude/"
+          prompt: |
+            REPO: ${{ github.repository }}
+            ISSUE NUMBER: ${{ github.event.issue.number }}
+
+            docs/design-doc.md, docs/adr/adr-0001-clean-architecture.md, CLAUDE.md
+            の内容に厳密に従って、このIssueに書かれたタスクを実装してください。
+
+            実装対象は Phase 1(Clean Architectureの骨格構築 + Prisma + MySQLでの実装)です。
+            CLAUDE.md に書かれた以下の制約は絶対に守ってください:
+            - domain/usecase は infrastructure の型・ライブラリに依存しないこと
+            - Repository interface のメソッドシグネチャは design-doc.md 記載のものから変更しないこと
+            - 権限判定ロジックは domain/services/ に純粋関数として実装すること
+
+            実装が完了したら、main ブランチに向けた Pull Request を作成し、
+            このIssue(#${{ github.event.issue.number }})をcloseする旨をPR本文に含めてください。
+          claude_args: |
+            --max-turns 40

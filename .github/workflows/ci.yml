@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: app_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/app_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prisma migrate deploy
+        run: pnpm exec prisma migrate deploy
+
+      - name: Lint (Biome)
+        run: pnpm exec biome ci .
+
+      - name: Unit tests (Vitest)
+        run: pnpm exec vitest run
+
+      - name: Architecture boundary check (dependency-cruiser)
+        run: pnpm exec depcruise src --config .dependency-cruiser.cjs

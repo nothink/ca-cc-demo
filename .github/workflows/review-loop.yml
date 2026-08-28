@@ -1,0 +1,120 @@
+name: Review Loop (Loop Engineering)
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+jobs:
+  round-guard:
+    runs-on: ubuntu-latest
+    outputs:
+      round: ${{ steps.count.outputs.round }}
+      escalate: ${{ steps.count.outputs.escalate }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: このPRの往復ラウンド数を数える
+        id: count
+        run: |
+          # base(main)からこのブランチまでのコミット数を「ラウンド数」の目安にする
+          ROUND=$(git rev-list --count origin/main..HEAD)
+          echo "round=$ROUND" >> "$GITHUB_OUTPUT"
+          if [ "$ROUND" -ge 6 ]; then
+            echo "escalate=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "escalate=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 収束しない場合は人間にエスカレーション
+        if: steps.count.outputs.escalate == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr edit ${{ github.event.pull_request.number }} --add-label needs-human
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body "レビューループが既定のラウンド数に達したため、自動処理を停止しました。人手でのレビューをお願いします。"
+
+  review:
+    needs: round-guard
+    if: needs.round-guard.outputs.escalate == 'false'
+    runs-on: ubuntu-latest
+    outputs:
+      approved: ${{ steps.verdict.outputs.approved }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Claudeによるレビュー(構造化出力)
+        id: review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          use_sticky_comment: true
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            CLAUDE.md, docs/design-doc.md, docs/adr/adr-0001-clean-architecture.md
+            の規約に照らして、このPRの差分をレビューしてください。特に以下を重点的に確認してください:
+            - domain/usecase が infrastructure に依存していないか
+            - Repository interface のシグネチャが design-doc.md から変更されていないか
+            - 権限判定ロジック(canModifyTodo)が純粋関数として domain/services/ に実装されているか
+
+            指摘があればPRにレビューコメントとして残してください。
+            指摘の有無に関わらず、最後に必ず構造化出力を返してください。
+          claude_args: |
+            --max-turns 20
+            --json-schema '{"type":"object","properties":{"approved":{"type":"boolean"},"findings":{"type":"array","items":{"type":"string"}}},"required":["approved","findings"]}'
+
+      - name: 判定結果をoutputsに変換
+        id: verdict
+        run: |
+          APPROVED=$(echo '${{ steps.review.outputs.structured_output }}' | jq -r '.approved')
+          echo "approved=$APPROVED" >> "$GITHUB_OUTPUT"
+
+  fix:
+    needs: review
+    if: needs.review.outputs.approved == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 指摘事項に対応してpush
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            直近のレビューコメントで指摘された内容に対応し、修正をこのブランチにコミット・pushしてください。
+            CLAUDE.md の制約(依存方向、Repository interfaceの凍結、権限判定ロジックの純粋性)は
+            絶対に破らないでください。
+          claude_args: |
+            --max-turns 20
+        # このジョブのpushにより pull_request(synchronize) が再発火し、review-loopが再度回る
+
+  merge:
+    needs: review
+    if: needs.review.outputs.approved == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: auto-mergeを有効化(必須チェック通過後に実マージ)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge ${{ github.event.pull_request.number }} --merge --auto
