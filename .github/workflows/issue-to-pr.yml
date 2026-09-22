@@ -32,8 +32,22 @@ jobs:
           --health-interval=5s
           --health-timeout=3s
           --health-retries=10
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
     env:
+      # Phase1(MySQL)用。Phase2(PostgreSQL)の作業では下の URL を DATABASE_URL に設定し直して使う
       DATABASE_URL: mysql://root:root@127.0.0.1:3306/app_test
+      POSTGRES_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/app_test
     steps:
       - uses: actions/checkout@v4
 
@@ -78,8 +92,10 @@ jobs:
             2. 依存関係は既に `pnpm install` 済み。追加が必要なら `pnpm add` を使う
             3. 実装が一区切りつくごとにコミットする(細かく分けてよい)
             4. 完了前に以下を全て実行し、全て成功する状態にする
-               (MySQL が起動しており DATABASE_URL が設定済み。migration と seed も実行して統合テストまで通すこと):
-               - pnpm exec prisma migrate deploy && pnpm db:seed
+               (MySQL と PostgreSQL の両方が起動している。DATABASE_URL は MySQL を指しているので、
+               PostgreSQL を使う場合は `export DATABASE_URL="$POSTGRES_DATABASE_URL"` してから実行すること。
+               migration と seed も実行して統合テストまで通すこと):
+               - pnpm db:migrate && pnpm db:seed(package.json の scripts に従う。ORM を変える場合は scripts も更新する)
                - pnpm exec biome ci .
                - pnpm exec tsc --noEmit
                - pnpm exec vitest run

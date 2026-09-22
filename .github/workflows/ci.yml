@@ -40,8 +40,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Prisma migrate deploy
-        run: pnpm exec prisma migrate deploy
+      - name: DB migrate
+        run: pnpm db:migrate
 
       - name: Seed fixed users
         run: pnpm db:seed

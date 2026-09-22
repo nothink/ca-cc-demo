@@ -131,6 +131,8 @@ jobs:
             - Entity・usecase の入出力・HTTP ステータス・seed が design-doc.md の定義どおりか
             - design-doc.md「テスト方針」に列挙されたケースがテストされているか
             - PR 本文に「Closes #<Issue番号>」と「設計書に無かった判断」の記載があるか
+            - PR 本文の「Closes #<Issue番号>」から Issue を特定し(`gh issue view <番号>`)、
+              その Issue の「受け入れ条件」と「実装するもの」が全て満たされているか(README 更新など Issue 固有の要件も含む)
 
             CI RESULT が success 以外の場合は、原因を確認したうえで approved=false としてください。
 
@@ -182,8 +184,22 @@ jobs:
           --health-interval=5s
           --health-timeout=3s
           --health-retries=10
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
     env:
+      # Phase1(MySQL)用。Phase2(PostgreSQL)の作業では下の URL を DATABASE_URL に設定し直して使う
       DATABASE_URL: mysql://root:root@127.0.0.1:3306/app_test
+      POSTGRES_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/app_test
     steps:
       - uses: actions/checkout@v4
         with:
@@ -217,8 +233,9 @@ jobs:
             CLAUDE.md の制約(依存方向、Repository interfaceの凍結、権限判定ロジックの純粋性、
             結線の場所)は絶対に破らないでください。
 
-            push 前に以下を実行し、全て成功させてください(MySQL 起動済み、DATABASE_URL 設定済み):
-            - pnpm exec prisma migrate deploy && pnpm db:seed
+            push 前に以下を実行し、全て成功させてください(MySQL と PostgreSQL が起動済み。DATABASE_URL は MySQL を指すので、
+            PostgreSQL を使う場合は `export DATABASE_URL="$POSTGRES_DATABASE_URL"` してから実行):
+            - pnpm db:migrate && pnpm db:seed(package.json の scripts に従う。ORM を変える場合は scripts も更新する)
             - pnpm exec biome ci .
             - pnpm exec tsc --noEmit
             - pnpm exec vitest run
