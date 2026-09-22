@@ -13,6 +13,75 @@ pnpm db:seed            # 固定ユーザー投入
 pnpm dev                # http://localhost:3000
 ```
 
+## API を試す (curl)
+
+固定ユーザー(`docs/design-doc.md` 参照)のIDを使う。
+
+```bash
+ADMIN_ID=11111111-1111-4111-8111-111111111111
+ALICE_ID=22222222-2222-4222-8222-222222222222
+BOB_ID=33333333-3333-4333-8333-333333333333
+```
+
+### 401: `X-User-Id` ヘッダが無い
+
+```bash
+curl -i http://localhost:3000/todos
+# HTTP/1.1 401 Unauthorized
+# {"error":"X-User-Id header is required"}
+```
+
+### 201: alice がTodoを作成
+
+```bash
+curl -i -X POST http://localhost:3000/todos \
+  -H "X-User-Id: $ALICE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"alice の Todo"}'
+# HTTP/1.1 201 Created
+```
+
+レスポンスの `id` を `TODO_ID` として使う(`jq` が必要)。
+
+```bash
+TODO_ID=$(curl -s -X POST http://localhost:3000/todos \
+  -H "X-User-Id: $ALICE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"alice の Todo"}' | jq -r .id)
+```
+
+### 403: bob が alice のTodoを更新しようとする(自分の所有物ではない)
+
+```bash
+curl -i -X PATCH "http://localhost:3000/todos/$TODO_ID" \
+  -H "X-User-Id: $BOB_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"completed":true}'
+# HTTP/1.1 403 Forbidden
+# {"error":"permission denied"}
+```
+
+### 200: admin は他人のTodoでも更新できる
+
+```bash
+curl -i -X PATCH "http://localhost:3000/todos/$TODO_ID" \
+  -H "X-User-Id: $ADMIN_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"completed":true}'
+# HTTP/1.1 200 OK
+```
+
+### 404: 存在しないTodoを更新しようとする
+
+```bash
+curl -i -X PATCH "http://localhost:3000/todos/00000000-0000-4000-8000-000000000000" \
+  -H "X-User-Id: $ALICE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"completed":true}'
+# HTTP/1.1 404 Not Found
+# {"error":"todo not found"}
+```
+
 ## 検証コマンド(CI と同じもの)
 
 ```bash

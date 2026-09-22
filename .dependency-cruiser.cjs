@@ -58,7 +58,7 @@ module.exports = {
       // docs/dependency-graph-phase1.svg / docs/dependency-graph-phase2.svg として保存して形を比較する
       archi: {
         collapsePattern:
-          "^(src/domain|src/usecase|src/infrastructure/(prisma|drizzle)|src/presentation)/[^/]+",
+          "^(src/domain|src/usecase|src/infrastructure/drizzle|src/presentation)/[^/]+",
       },
     },
   },
