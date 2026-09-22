@@ -152,6 +152,12 @@ jobs:
           STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
         run: |
           echo "structured_output: ${STRUCTURED_OUTPUT}"
+          if [ -z "${STRUCTURED_OUTPUT}" ]; then
+            # action が実行をスキップした場合(workflow 検証の不一致など)に、静かに止まらず失敗として可視化する
+            echo "::error::Claude の構造化出力が空です。action がスキップされた可能性があります(上の 'Claudeによるレビュー' step の warning を確認)。"
+            echo "::error::PR ブランチの workflow ファイルが main と異なる場合は、PR ブランチに main を取り込んでから再実行してください。"
+            exit 1
+          fi
           APPROVED=$(printf '%s' "${STRUCTURED_OUTPUT}" | jq -r '.approved // false')
           echo "approved=${APPROVED}" >> "$GITHUB_OUTPUT"
 
