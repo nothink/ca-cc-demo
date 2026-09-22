@@ -243,3 +243,16 @@ jobs:
         # ブランチ削除はリポジトリ設定 delete_branch_on_merge で行われる)
         run: |
           gh pr merge "${PR_NUMBER}" --repo "${{ github.repository }}" --merge
+
+      # GITHUB_TOKEN による merge では「Closes #N」の自動 close とブランチ自動削除が
+      # 行われない(PR #3 で確認)ため、明示的に行う
+      - name: 関連 Issue を close し、ブランチを削除する
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BODY=$(gh pr view "${PR_NUMBER}" --repo "${{ github.repository }}" --json body --jq .body)
+          for n in $(printf '%s' "${BODY}" | grep -oiE '(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved) #[0-9]+' | grep -oE '[0-9]+' | sort -u); do
+            gh issue close "$n" --repo "${{ github.repository }}" \
+              --comment "PR #${PR_NUMBER} が merge されたため close します。" || true
+          done
+          gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/${HEAD_REF}" || true
