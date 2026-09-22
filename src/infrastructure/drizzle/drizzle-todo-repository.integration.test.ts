@@ -1,22 +1,21 @@
-import type { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Todo } from "../../domain/entities/todo.js";
-import { createPrismaClient } from "./client.js";
-import { PrismaTodoRepository } from "./prisma-todo-repository.js";
+import { createDrizzleClient, type DrizzleClient } from "./client.js";
+import { DrizzleTodoRepository } from "./drizzle-todo-repository.js";
 
 const OWNER_ID = "22222222-2222-4222-8222-222222222222";
 
-describe.skipIf(!process.env.DATABASE_URL)("PrismaTodoRepository", () => {
-  let client: PrismaClient;
-  let repository: PrismaTodoRepository;
+describe.skipIf(!process.env.DATABASE_URL)("DrizzleTodoRepository", () => {
+  let client: DrizzleClient;
+  let repository: DrizzleTodoRepository;
 
   beforeAll(() => {
-    client = createPrismaClient();
-    repository = new PrismaTodoRepository(client);
+    client = createDrizzleClient();
+    repository = new DrizzleTodoRepository(client);
   });
 
   afterAll(async () => {
-    await client.$disconnect();
+    await client.$client.end();
   });
 
   it("returns the same content from save -> findById", async () => {
