@@ -1,4 +1,5 @@
-import { createPrismaClient } from "./client.js";
+import { createDrizzleClient } from "./client.js";
+import { users } from "./schema/user.js";
 
 const FIXED_USERS = [
   { id: "11111111-1111-4111-8111-111111111111", name: "admin", role: "admin" as const },
@@ -7,17 +8,13 @@ const FIXED_USERS = [
 ];
 
 async function main() {
-  const client = createPrismaClient();
+  const client = createDrizzleClient();
   try {
     for (const user of FIXED_USERS) {
-      await client.user.upsert({
-        where: { id: user.id },
-        create: user,
-        update: {},
-      });
+      await client.insert(users).values(user).onConflictDoNothing({ target: users.id });
     }
   } finally {
-    await client.$disconnect();
+    await client.$client.end();
   }
 }
 

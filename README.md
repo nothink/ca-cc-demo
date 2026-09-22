@@ -7,8 +7,9 @@ Clean Architecture と Claude Code のデモ
 mise install            # Node 24.19.0 / pnpm 11.24.0
 pnpm install
 cp .env.example .env
-pnpm db:up              # MySQL (docker compose)
-pnpm prisma:migrate     # マイグレーション適用 + Prisma Client 生成
+pnpm db:up              # PostgreSQL (docker compose)
+pnpm db:migrate         # マイグレーション適用 (drizzle-kit migrate)
+pnpm db:seed            # 固定ユーザー投入
 pnpm dev                # http://localhost:3000
 ```
 
@@ -34,7 +35,7 @@ PR 上で「Claude レビュー → 不承認なら Claude が修正 push → �
 
 ```
 Issue(loop-engineering) → issue-to-pr.yml → PR
-PR(opened/synchronize) → ci.yml(MySQL + migrate + seed + lint/typecheck/test/depcruise)
+PR(opened/synchronize) → ci.yml(PostgreSQL + migrate + seed + lint/typecheck/test/depcruise)
                        → review-loop.yml: round-guard → wait-ci → review → fix | merge
 ```
 

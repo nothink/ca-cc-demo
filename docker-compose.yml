@@ -1,19 +1,20 @@
 services:
-  mysql:
-    image: mysql:8
-    container_name: ca-cc-demo-mysql
+  postgres:
+    image: postgres:17
+    container_name: ca-cc-demo-postgres
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: app
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: app
     ports:
-      - "3306:3306"
+      - "5432:5432"
     volumes:
-      - mysql-data:/var/lib/mysql
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "pg_isready", "-U", "postgres"]
       interval: 5s
       timeout: 3s
       retries: 10
 
 volumes:
-  mysql-data:
+  postgres-data:

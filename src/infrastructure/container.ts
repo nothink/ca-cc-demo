@@ -1,8 +1,8 @@
 import type { TodoRepository } from "../domain/repositories/todo-repository.js";
 import type { UserRepository } from "../domain/repositories/user-repository.js";
-import { createPrismaClient } from "./prisma/client.js";
-import { PrismaTodoRepository } from "./prisma/prisma-todo-repository.js";
-import { PrismaUserRepository } from "./prisma/prisma-user-repository.js";
+import { createDrizzleClient } from "./drizzle/client.js";
+import { DrizzleTodoRepository } from "./drizzle/drizzle-todo-repository.js";
+import { DrizzleUserRepository } from "./drizzle/drizzle-user-repository.js";
 
 export type Container = {
   todoRepository: TodoRepository;
@@ -10,9 +10,9 @@ export type Container = {
 };
 
 export function createContainer(): Container {
-  const client = createPrismaClient();
+  const client = createDrizzleClient();
   return {
-    todoRepository: new PrismaTodoRepository(client),
-    userRepository: new PrismaUserRepository(client),
+    todoRepository: new DrizzleTodoRepository(client),
+    userRepository: new DrizzleUserRepository(client),
   };
 }

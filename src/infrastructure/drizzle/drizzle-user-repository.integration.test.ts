@@ -1,19 +1,18 @@
-import type { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createPrismaClient } from "./client.js";
-import { PrismaUserRepository } from "./prisma-user-repository.js";
+import { createDrizzleClient, type DrizzleClient } from "./client.js";
+import { DrizzleUserRepository } from "./drizzle-user-repository.js";
 
-describe.skipIf(!process.env.DATABASE_URL)("PrismaUserRepository", () => {
-  let client: PrismaClient;
-  let repository: PrismaUserRepository;
+describe.skipIf(!process.env.DATABASE_URL)("DrizzleUserRepository", () => {
+  let client: DrizzleClient;
+  let repository: DrizzleUserRepository;
 
   beforeAll(() => {
-    client = createPrismaClient();
-    repository = new PrismaUserRepository(client);
+    client = createDrizzleClient();
+    repository = new DrizzleUserRepository(client);
   });
 
   afterAll(async () => {
-    await client.$disconnect();
+    await client.$client.end();
   });
 
   it("finds a seeded fixed user by id", async () => {

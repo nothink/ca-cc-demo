@@ -6,7 +6,15 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/node_modules", "!**/dist", "!**/docs/erd", "!**/generated", "!**/*.svg"]
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/docs/erd",
+      "!**/generated",
+      "!**/*.svg",
+      "!**/drizzle/migrations"
+    ]
   },
   "formatter": {
     "enabled": true,
