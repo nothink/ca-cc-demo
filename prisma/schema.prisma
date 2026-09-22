@@ -1,7 +1,3 @@
-// Phase 1 用 Prisma schema。
-// モデル定義(User / Todo)は Issue 1 の実装で追加する。
-// ER 図: pnpm erd (Liam ERD) で docs/erd/ に生成する。
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,4 +5,28 @@ generator client {
 datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  member
+}
+
+model User {
+  id    String @id @db.VarChar(36)
+  name  String @db.VarChar(100)
+  role  Role
+  todos Todo[]
+}
+
+model Todo {
+  id        String   @id @db.VarChar(36)
+  title     String   @db.VarChar(200)
+  completed Boolean
+  ownerId   String   @db.VarChar(36)
+  createdAt DateTime
+  updatedAt DateTime
+  owner     User     @relation(fields: [ownerId], references: [id])
+
+  @@index([ownerId])
 }
