@@ -134,11 +134,16 @@ jobs:
 
             CI RESULT が success 以外の場合は、原因を確認したうえで approved=false としてください。
 
+            進め方: `gh pr view ${{ env.PR_NUMBER }}` で本文を、`gh pr diff ${{ env.PR_NUMBER }}` で差分を取得して
+            レビューしてください(gh は GH_TOKEN で認証済み)。ファイルを 1 つずつ Read するより差分を先に読むこと。
+            ターン数に上限があるため、検証コマンドの再実行は CI が失敗している場合に限ってください。
+
             指摘があればPRにレビューコメントとして残してください。
             軽微なスタイルの好みだけで approved=false にはしないでください。
             指摘の有無に関わらず、最後に必ず構造化出力を返してください。
           claude_args: |
-            --max-turns 30
+            --max-turns 80
+            --allowedTools "Bash,Read,Glob,Grep,LS,TodoWrite,Task,WebFetch,WebSearch"
             --json-schema '{"type":"object","properties":{"approved":{"type":"boolean"},"findings":{"type":"array","items":{"type":"string"}}},"required":["approved","findings"]}'
 
       - name: 判定結果をoutputsに変換
