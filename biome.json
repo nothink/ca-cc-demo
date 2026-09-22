@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/node_modules", "!**/dist", "!**/docs/erd", "!**/generated"]
+    "includes": ["**", "!**/node_modules", "!**/dist", "!**/docs/erd", "!**/generated", "!**/*.svg"]
   },
   "formatter": {
     "enabled": true,
