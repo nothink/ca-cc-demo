@@ -233,5 +233,7 @@ jobs:
       - name: merge
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # checkout していない job なので --repo を明示する(--delete-branch はローカル git を要求するため使わない。
+        # ブランチ削除はリポジトリ設定 delete_branch_on_merge で行われる)
         run: |
-          gh pr merge "${PR_NUMBER}" --merge --delete-branch
+          gh pr merge "${PR_NUMBER}" --repo "${{ github.repository }}" --merge
