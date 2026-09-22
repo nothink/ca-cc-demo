@@ -2,7 +2,7 @@ name: Review Loop (Loop Engineering)
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened]
 
 # 同じPRで新しいpushが来たら古いループは打ち切る
 concurrency:
@@ -113,6 +113,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          show_full_output: true
           use_sticky_comment: true
           allowed_bots: "*" # PR は claude[bot] が作成するため。fork からの PR には secrets が渡らないので実害なし
           prompt: |
@@ -157,6 +158,21 @@ jobs:
     needs: review
     if: needs.review.outputs.approved == 'false'
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: app_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/app_test
     steps:
       - uses: actions/checkout@v4
         with:
@@ -177,6 +193,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          show_full_output: true
           allowed_bots: "*"
           prompt: |
             REPO: ${{ github.repository }}
@@ -189,14 +206,15 @@ jobs:
             CLAUDE.md の制約(依存方向、Repository interfaceの凍結、権限判定ロジックの純粋性、
             結線の場所)は絶対に破らないでください。
 
-            push 前に以下を実行し、全て成功させてください:
+            push 前に以下を実行し、全て成功させてください(MySQL 起動済み、DATABASE_URL 設定済み):
+            - pnpm exec prisma migrate deploy && pnpm db:seed
             - pnpm exec biome ci .
             - pnpm exec tsc --noEmit
             - pnpm exec vitest run
             - pnpm exec depcruise src --config .dependency-cruiser.cjs
           claude_args: |
-            --max-turns 40
-            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,Bash(pnpm:*),Bash(git:*),Bash(gh pr view:*),Bash(gh api:*),Bash(mkdir:*),Bash(ls:*),Bash(cat:*)"
+            --max-turns 120
+            --allowedTools "Bash,Read,Write,Edit,MultiEdit,Glob,Grep,LS,TodoWrite,Task,WebFetch,WebSearch"
 
   # ---------------------------------------------------------------------------
   # 4b. 承認かつ CI success なら merge

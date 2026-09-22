@@ -19,6 +19,21 @@ jobs:
   implement:
     if: github.event.label.name == 'loop-engineering'
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: app_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/app_test
     steps:
       - uses: actions/checkout@v4
 
@@ -33,14 +48,17 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - uses: anthropics/claude-code-action@v1
+        id: claude
         with:
           # リポジトリに登録済みの secret は CLAUDE_CODE_OAUTH_TOKEN のみ(ANTHROPIC_API_KEY は未登録)
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           label_trigger: "loop-engineering"
           branch_prefix: "claude/"
+          show_full_output: true
           prompt: |
             REPO: ${{ github.repository }}
             ISSUE NUMBER: ${{ github.event.issue.number }}
+            BRANCH: claude/issue-${{ github.event.issue.number }}
 
             このIssueに書かれたタスクを実装してください。
 
@@ -55,17 +73,50 @@ jobs:
             - 結線は src/infrastructure/container.ts と src/main.ts のみで行うこと
             - Entity・usecase の入出力・HTTP ステータス・seed ユーザーは design-doc.md の定義に従うこと
 
-            完了前に以下を全て実行し、全て成功する状態にしてください(DBが必要なものは除く):
-            - pnpm exec biome ci .
-            - pnpm exec tsc --noEmit
-            - pnpm exec vitest run
-            - pnpm exec depcruise src --config .dependency-cruiser.cjs
-
-            実装が完了したら、変更をコミットして push し、main ブランチに向けた Pull Request を作成してください。
-            PR 本文には以下を含めてください:
-            - `Closes #${{ github.event.issue.number }}`
-            - 実装内容の要約
-            - 「設計書に無かった判断」があればその一覧(無ければ「なし」)
+            進め方:
+            1. 最初に `git checkout -b claude/issue-${{ github.event.issue.number }}` でブランチを作る
+            2. 依存関係は既に `pnpm install` 済み。追加が必要なら `pnpm add` を使う
+            3. 実装が一区切りつくごとにコミットする(細かく分けてよい)
+            4. 完了前に以下を全て実行し、全て成功する状態にする
+               (MySQL が起動しており DATABASE_URL が設定済み。migration と seed も実行して統合テストまで通すこと):
+               - pnpm exec prisma migrate deploy && pnpm db:seed
+               - pnpm exec biome ci .
+               - pnpm exec tsc --noEmit
+               - pnpm exec vitest run
+               - pnpm exec depcruise src --config .dependency-cruiser.cjs
+            5. `git push -u origin claude/issue-${{ github.event.issue.number }}` で push する
+            6. `gh pr create --base main --head claude/issue-${{ github.event.issue.number }}` で
+               main に向けた Pull Request を作成する(gh は GH_TOKEN で認証済み)。PR 本文には以下を含める:
+               - 1 行目: `Closes #${{ github.event.issue.number }}`
+               - 実装内容の要約
+               - 「設計書に無かった判断」の一覧(無ければ「なし」)
+               - 実行した検証コマンドと結果
           claude_args: |
-            --max-turns 80
-            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,Bash(pnpm:*),Bash(git:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh issue view:*),Bash(mkdir:*),Bash(ls:*),Bash(cat:*)"
+            --max-turns 250
+            --allowedTools "Bash,Read,Write,Edit,MultiEdit,Glob,Grep,LS,TodoWrite,Task,WebFetch,WebSearch"
+
+      - name: PR が作られていなければ保険として作成する
+        # Claude App のトークンは action 終了時に失効するため、ここでは GITHUB_TOKEN で作成する。
+        # GITHUB_TOKEN で作った PR は CI / review-loop を発火させないので、
+        # その場合は PR を close → reopen して(reopened トリガー)ループを起動する。
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: claude/issue-${{ github.event.issue.number }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          if ! git ls-remote --exit-code --heads origin "${BRANCH}" >/dev/null; then
+            echo "ブランチ ${BRANCH} が push されていないため PR は作成しません"
+            gh issue comment "${ISSUE}" --body "実装 workflow が終了しましたが、ブランチ \`${BRANCH}\` は push されていません。workflow のログを確認してください: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            exit 0
+          fi
+          if [ -n "$(gh pr list --head "${BRANCH}" --state open --json number --jq '.[0].number')" ]; then
+            echo "PR は既に存在します"; exit 0
+          fi
+          gh pr create --base main --head "${BRANCH}" \
+            --title "$(gh issue view "${ISSUE}" --json title --jq .title)" \
+            --body "Closes #${ISSUE}
+
+          ブランチは push されましたが Claude が PR を作成しなかったため、workflow が自動作成しました。
+          この PR は GITHUB_TOKEN で作成されたため CI / review-loop が発火していません。
+          **PR を close → reopen するとループが起動します。**"

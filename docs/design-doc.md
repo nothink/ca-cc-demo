@@ -217,6 +217,8 @@ export class PermissionDeniedError extends Error {} // canModifyTodoがfalse
   - 存在しないTodoの更新・削除は `TodoNotFoundError`(権限より先に判定)
   - 存在しない actorId は `UnauthenticatedError`
 - `domain/services/todo-permission.test.ts` は fake すら使わず、値を直接組み立ててテストする
+- infrastructure の統合テスト(`*.integration.test.ts`)は `DATABASE_URL` が未設定なら `describe.skipIf` でスキップし、
+  DB なしの環境でも `pnpm test` がグリーンになるようにする(CI では DB を起動して実行する)
 
 ## presentation 層 (Hono)
 

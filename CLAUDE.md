@@ -86,7 +86,8 @@ docs/
 
 ## テスト方針
 - usecase/domainのテストは実DBを立てず、`usecase/testing/` のfake repositoryを使う
-- infrastructure層(Prisma/Drizzle実装)は必要最小限の統合テスト(`*.integration.test.ts`)のみ。CIではDBを起動して実行する
+- infrastructure層(Prisma/Drizzle実装)は必要最小限の統合テスト(`*.integration.test.ts`)のみ。
+  `DATABASE_URL` 未設定時は `describe.skipIf` でスキップし、CIではDBを起動して実行する
 - 最低限カバーすべきケースは `docs/design-doc.md` の「テスト方針」を参照
 
 ## 権限モデル(参考)
