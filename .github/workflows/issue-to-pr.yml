@@ -4,11 +4,16 @@ on:
   issues:
     types: [labeled]
 
+# 同じIssueに対して多重起動しない
+concurrency:
+  group: issue-to-pr-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   issues: write
   pull-requests: write
-  id-token: write
+  id-token: write # Claude GitHub App のトークン取得(OIDC)に必要
 
 jobs:
   implement:
@@ -17,25 +22,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # リポジトリに登録済みの secret は CLAUDE_CODE_OAUTH_TOKEN のみ(ANTHROPIC_API_KEY は未登録)
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           label_trigger: "loop-engineering"
           branch_prefix: "claude/"
           prompt: |
             REPO: ${{ github.repository }}
             ISSUE NUMBER: ${{ github.event.issue.number }}
 
-            docs/design-doc.md, docs/adr/adr-0001-clean-architecture.md, CLAUDE.md
-            の内容に厳密に従って、このIssueに書かれたタスクを実装してください。
+            このIssueに書かれたタスクを実装してください。
 
-            実装対象は Phase 1(Clean Architectureの骨格構築 + Prisma + MySQLでの実装)です。
-            CLAUDE.md に書かれた以下の制約は絶対に守ってください:
-            - domain/usecase は infrastructure の型・ライブラリに依存しないこと
+            必ず先に CLAUDE.md, docs/design-doc.md, docs/adr/adr-0001-clean-architecture.md を読み、
+            その内容に厳密に従ってください。「現在のフェーズ」とそのゴール、および実装対象の
+            DB/ORM は CLAUDE.md の記述と Issue 本文が正です(このプロンプトでは固定しません)。
+
+            CLAUDE.md の「絶対に守る制約」は必ず守ってください:
+            - domain/usecase/presentation は infrastructure の型・ライブラリに依存しないこと
             - Repository interface のメソッドシグネチャは design-doc.md 記載のものから変更しないこと
             - 権限判定ロジックは domain/services/ に純粋関数として実装すること
+            - 結線は src/infrastructure/container.ts と src/main.ts のみで行うこと
+            - Entity・usecase の入出力・HTTP ステータス・seed ユーザーは design-doc.md の定義に従うこと
 
-            実装が完了したら、main ブランチに向けた Pull Request を作成し、
-            このIssue(#${{ github.event.issue.number }})をcloseする旨をPR本文に含めてください。
+            完了前に以下を全て実行し、全て成功する状態にしてください(DBが必要なものは除く):
+            - pnpm exec biome ci .
+            - pnpm exec tsc --noEmit
+            - pnpm exec vitest run
+            - pnpm exec depcruise src --config .dependency-cruiser.cjs
+
+            実装が完了したら、変更をコミットして push し、main ブランチに向けた Pull Request を作成してください。
+            PR 本文には以下を含めてください:
+            - `Closes #${{ github.event.issue.number }}`
+            - 実装内容の要約
+            - 「設計書に無かった判断」があればその一覧(無ければ「なし」)
           claude_args: |
-            --max-turns 40
+            --max-turns 80
+            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,Bash(pnpm:*),Bash(git:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh issue view:*),Bash(mkdir:*),Bash(ls:*),Bash(cat:*)"

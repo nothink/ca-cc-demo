@@ -25,3 +25,34 @@ pnpm erd                # Liam ERD を docs/erd/ に生成
 
 設計は `docs/design-doc.md`、アーキテクチャ選定は `docs/adr/adr-0001-clean-architecture.md`、
 開発時の制約は `CLAUDE.md` を参照。
+
+## ループエンジニアリングの運用
+
+Issue に `loop-engineering` ラベルを付けると Claude が実装して PR を作り、
+PR 上で「Claude レビュー → 不承認なら Claude が修正 push → 再レビュー」を自動で往復します。
+承認かつ CI 成功で merge され、6 ラウンドで収束しなければ `needs-human` ラベルを付けて停止します。
+
+```
+Issue(loop-engineering) → issue-to-pr.yml → PR
+PR(opened/synchronize) → ci.yml(MySQL + migrate + seed + lint/typecheck/test/depcruise)
+                       → review-loop.yml: round-guard → wait-ci → review → fix | merge
+```
+
+### 事前に必要な GitHub 側の設定
+
+- Secret `CLAUDE_CODE_OAUTH_TOKEN`(`claude setup-token` で発行)。workflow はこれだけを使う
+- [Claude GitHub App](https://github.com/apps/claude) をこのリポジトリにインストール
+  (PR 作成・レビューコメント・修正 push は App のトークンで行う。`GITHUB_TOKEN` だと後続 workflow が発火しない)
+- ラベル `loop-engineering` を作成(`needs-human` は workflow が必要時に自動作成する)
+
+```bash
+gh label create loop-engineering --color 1D76DB --description "Claude に実装させる Issue"
+```
+
+- branch protection は不要(review-loop.yml が CI 完了を待ってから merge する)
+
+### 手順
+
+1. Issue 1(Phase 1: Prisma + MySQL)を起票し `loop-engineering` を付ける → merge されるのを待つ
+2. `CLAUDE.md` の「現在のフェーズ」を Phase 2 に書き換えてコミット
+3. Issue 2(Phase 2: Drizzle + PostgreSQL)を起票し `loop-engineering` を付ける

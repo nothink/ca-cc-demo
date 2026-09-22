@@ -4,29 +4,48 @@ on:
   pull_request:
     types: [opened, synchronize]
 
+# 同じPRで新しいpushが来たら古いループは打ち切る
+concurrency:
+  group: review-loop-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   pull-requests: write
-  issues: read
+  issues: write
+  actions: read
+  id-token: write # Claude GitHub App のトークン取得(OIDC)に必要
+
+env:
+  PR_NUMBER: ${{ github.event.pull_request.number }}
+  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+  HEAD_REF: ${{ github.event.pull_request.head.ref }}
+  MAX_ROUNDS: "6"
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # 1. ラウンド数を数え、上限に達していたら人間にエスカレーションして止める
+  #    ラウンド数 = このPRのheadブランチで起動したこのworkflowの実行回数(今回を含む)
+  #    (コミット数ではなく起動回数で数える。Claudeは1実装で複数コミットを積むため)
+  # ---------------------------------------------------------------------------
   round-guard:
+    if: ${{ !github.event.pull_request.draft && !contains(github.event.pull_request.labels.*.name, 'needs-human') }}
     runs-on: ubuntu-latest
     outputs:
       round: ${{ steps.count.outputs.round }}
       escalate: ${{ steps.count.outputs.escalate }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: このPRの往復ラウンド数を数える
+      - name: ラウンド数を数える
         id: count
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # base(main)からこのブランチまでのコミット数を「ラウンド数」の目安にする
-          ROUND=$(git rev-list --count origin/main..HEAD)
-          echo "round=$ROUND" >> "$GITHUB_OUTPUT"
-          if [ "$ROUND" -ge 6 ]; then
+          ROUND=$(gh api \
+            "repos/${{ github.repository }}/actions/workflows/review-loop.yml/runs?branch=${HEAD_REF}&event=pull_request&per_page=100" \
+            --jq '.total_count')
+          echo "round=${ROUND}"
+          echo "round=${ROUND}" >> "$GITHUB_OUTPUT"
+          if [ "${ROUND}" -gt "${MAX_ROUNDS}" ]; then
             echo "escalate=true" >> "$GITHUB_OUTPUT"
           else
             echo "escalate=false" >> "$GITHUB_OUTPUT"
@@ -37,13 +56,49 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr edit ${{ github.event.pull_request.number }} --add-label needs-human
-          gh pr comment ${{ github.event.pull_request.number }} \
-            --body "レビューループが既定のラウンド数に達したため、自動処理を停止しました。人手でのレビューをお願いします。"
+          gh label create needs-human --color B60205 \
+            --description "自動レビューループが収束せず人手が必要" --force
+          gh pr edit "${PR_NUMBER}" --add-label needs-human
+          gh pr comment "${PR_NUMBER}" \
+            --body "レビューループが上限(${MAX_ROUNDS}ラウンド)に達したため自動処理を停止しました。人手でのレビューをお願いします。"
 
-  review:
+  # ---------------------------------------------------------------------------
+  # 2. 同じコミットに対する CI workflow の完了を待つ
+  #    (branch protection を使わずに「CIが通っていないPRはmergeしない」を保証する)
+  # ---------------------------------------------------------------------------
+  wait-ci:
     needs: round-guard
     if: needs.round-guard.outputs.escalate == 'false'
+    runs-on: ubuntu-latest
+    outputs:
+      conclusion: ${{ steps.wait.outputs.conclusion }}
+    steps:
+      - name: CI の完了を待つ
+        id: wait
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # CI はこの workflow と同じ pull_request イベントで起動しているはず。最大20分待つ
+          for i in $(seq 1 120); do
+            RUN=$(gh api \
+              "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=${HEAD_SHA}&event=pull_request&per_page=1" \
+              --jq '.workflow_runs[0] | if . == null then "" else "\(.status) \(.conclusion // "")" end')
+            STATUS=${RUN%% *}
+            CONCLUSION=${RUN#* }
+            echo "[$i] status=${STATUS:-not-started} conclusion=${CONCLUSION}"
+            if [ "${STATUS}" = "completed" ]; then
+              echo "conclusion=${CONCLUSION}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "conclusion=timed_out" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # 3. Claude がレビューし、構造化出力で approved を返す
+  # ---------------------------------------------------------------------------
+  review:
+    needs: [round-guard, wait-ci]
     runs-on: ubuntu-latest
     outputs:
       approved: ${{ steps.verdict.outputs.approved }}
@@ -56,65 +111,103 @@ jobs:
         id: review
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           use_sticky_comment: true
+          allowed_bots: "*" # PR は claude[bot] が作成するため。fork からの PR には secrets が渡らないので実害なし
           prompt: |
             REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
+            PR NUMBER: ${{ env.PR_NUMBER }}
+            REVIEW ROUND: ${{ needs.round-guard.outputs.round }} / ${{ env.MAX_ROUNDS }}
+            CI RESULT (workflow "CI" on this commit): ${{ needs.wait-ci.outputs.conclusion }}
 
             CLAUDE.md, docs/design-doc.md, docs/adr/adr-0001-clean-architecture.md
             の規約に照らして、このPRの差分をレビューしてください。特に以下を重点的に確認してください:
-            - domain/usecase が infrastructure に依存していないか
+            - domain/usecase/presentation が infrastructure に依存していないか
             - Repository interface のシグネチャが design-doc.md から変更されていないか
             - 権限判定ロジック(canModifyTodo)が純粋関数として domain/services/ に実装されているか
+            - 結線が src/infrastructure/container.ts と src/main.ts に閉じているか
+            - Entity・usecase の入出力・HTTP ステータス・seed が design-doc.md の定義どおりか
+            - design-doc.md「テスト方針」に列挙されたケースがテストされているか
+            - PR 本文に「Closes #<Issue番号>」と「設計書に無かった判断」の記載があるか
+
+            CI RESULT が success 以外の場合は、原因を確認したうえで approved=false としてください。
 
             指摘があればPRにレビューコメントとして残してください。
+            軽微なスタイルの好みだけで approved=false にはしないでください。
             指摘の有無に関わらず、最後に必ず構造化出力を返してください。
           claude_args: |
-            --max-turns 20
+            --max-turns 30
             --json-schema '{"type":"object","properties":{"approved":{"type":"boolean"},"findings":{"type":"array","items":{"type":"string"}}},"required":["approved","findings"]}'
 
       - name: 判定結果をoutputsに変換
         id: verdict
+        env:
+          STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
         run: |
-          APPROVED=$(echo '${{ steps.review.outputs.structured_output }}' | jq -r '.approved')
-          echo "approved=$APPROVED" >> "$GITHUB_OUTPUT"
+          echo "structured_output: ${STRUCTURED_OUTPUT}"
+          APPROVED=$(printf '%s' "${STRUCTURED_OUTPUT}" | jq -r '.approved // false')
+          echo "approved=${APPROVED}" >> "$GITHUB_OUTPUT"
 
+  # ---------------------------------------------------------------------------
+  # 4a. 不承認なら Claude が修正して push(Claude App のトークンで push するので
+  #     pull_request(synchronize) が再発火し、ループが次のラウンドに進む)
+  # ---------------------------------------------------------------------------
   fix:
     needs: review
     if: needs.review.outputs.approved == 'false'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HEAD_REF }}
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: 指摘事項に対応してpush
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "*"
           prompt: |
             REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
+            PR NUMBER: ${{ env.PR_NUMBER }}
 
-            直近のレビューコメントで指摘された内容に対応し、修正をこのブランチにコミット・pushしてください。
-            CLAUDE.md の制約(依存方向、Repository interfaceの凍結、権限判定ロジックの純粋性)は
-            絶対に破らないでください。
+            このPRの直近のレビューコメント(sticky comment とインラインコメント)で指摘された内容に対応し、
+            修正をこのブランチ(${{ env.HEAD_REF }})にコミット・pushしてください。
+            CI が失敗している場合はその原因も修正してください。
+
+            CLAUDE.md の制約(依存方向、Repository interfaceの凍結、権限判定ロジックの純粋性、
+            結線の場所)は絶対に破らないでください。
+
+            push 前に以下を実行し、全て成功させてください:
+            - pnpm exec biome ci .
+            - pnpm exec tsc --noEmit
+            - pnpm exec vitest run
+            - pnpm exec depcruise src --config .dependency-cruiser.cjs
           claude_args: |
-            --max-turns 20
-        # このジョブのpushにより pull_request(synchronize) が再発火し、review-loopが再度回る
+            --max-turns 40
+            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,Bash(pnpm:*),Bash(git:*),Bash(gh pr view:*),Bash(gh api:*),Bash(mkdir:*),Bash(ls:*),Bash(cat:*)"
 
+  # ---------------------------------------------------------------------------
+  # 4b. 承認かつ CI success なら merge
+  #     (リポジトリの auto-merge 設定が無効のため --auto は使わず、CI 完了を待ってから直接 merge する)
+  # ---------------------------------------------------------------------------
   merge:
-    needs: review
-    if: needs.review.outputs.approved == 'true'
+    needs: [wait-ci, review]
+    if: needs.review.outputs.approved == 'true' && needs.wait-ci.outputs.conclusion == 'success'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
-      - name: auto-mergeを有効化(必須チェック通過後に実マージ)
+      - name: merge
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr merge ${{ github.event.pull_request.number }} --merge --auto
+          gh pr merge "${PR_NUMBER}" --merge --delete-branch
