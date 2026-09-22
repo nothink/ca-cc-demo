@@ -1,0 +1,46 @@
+{
+  "name": "ca-cc-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Clean Architecture × Claude Code demo (Todo/User with role-based permission)",
+  "type": "module",
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome ci .",
+    "lint:fix": "biome check --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "erd": "liam erd build --format prisma --input prisma/schema.prisma --output-dir docs/erd",
+    "depcruise": "depcruise src --config .dependency-cruiser.cjs",
+    "depcruise:svg": "depcruise src --config .dependency-cruiser.cjs --output-type dot | dot -T svg > docs/dependency-graph.svg"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.0",
+    "@hono/zod-openapi": "^1.1.0",
+    "@prisma/client": "^6.16.0",
+    "@scalar/hono-api-reference": "^0.9.0",
+    "hono": "^4.9.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.0",
+    "@liam-hq/cli": "^0.4.0",
+    "@types/node": "^24.5.0",
+    "dependency-cruiser": "^17.0.0",
+    "prisma": "^6.16.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}
