@@ -134,11 +134,16 @@ jobs:
 
             CI RESULT が success 以外の場合は、原因を確認したうえで approved=false としてください。
 
+            進め方: `gh pr view ${{ env.PR_NUMBER }}` で本文を、`gh pr diff ${{ env.PR_NUMBER }}` で差分を取得して
+            レビューしてください(gh は GH_TOKEN で認証済み)。ファイルを 1 つずつ Read するより差分を先に読むこと。
+            ターン数に上限があるため、検証コマンドの再実行は CI が失敗している場合に限ってください。
+
             指摘があればPRにレビューコメントとして残してください。
             軽微なスタイルの好みだけで approved=false にはしないでください。
             指摘の有無に関わらず、最後に必ず構造化出力を返してください。
           claude_args: |
-            --max-turns 30
+            --max-turns 80
+            --allowedTools "Bash,Read,Glob,Grep,LS,TodoWrite,Task,WebFetch,WebSearch"
             --json-schema '{"type":"object","properties":{"approved":{"type":"boolean"},"findings":{"type":"array","items":{"type":"string"}}},"required":["approved","findings"]}'
 
       - name: 判定結果をoutputsに変換
@@ -147,6 +152,12 @@ jobs:
           STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
         run: |
           echo "structured_output: ${STRUCTURED_OUTPUT}"
+          if [ -z "${STRUCTURED_OUTPUT}" ]; then
+            # action が実行をスキップした場合(workflow 検証の不一致など)に、静かに止まらず失敗として可視化する
+            echo "::error::Claude の構造化出力が空です。action がスキップされた可能性があります(上の 'Claudeによるレビュー' step の warning を確認)。"
+            echo "::error::PR ブランチの workflow ファイルが main と異なる場合は、PR ブランチに main を取り込んでから再実行してください。"
+            exit 1
+          fi
           APPROVED=$(printf '%s' "${STRUCTURED_OUTPUT}" | jq -r '.approved // false')
           echo "approved=${APPROVED}" >> "$GITHUB_OUTPUT"
 
@@ -228,5 +239,7 @@ jobs:
       - name: merge
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # checkout していない job なので --repo を明示する(--delete-branch はローカル git を要求するため使わない。
+        # ブランチ削除はリポジトリ設定 delete_branch_on_merge で行われる)
         run: |
-          gh pr merge "${PR_NUMBER}" --merge --delete-branch
+          gh pr merge "${PR_NUMBER}" --repo "${{ github.repository }}" --merge
