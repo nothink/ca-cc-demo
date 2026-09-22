@@ -22,7 +22,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
-    "erd": "liam erd build --format prisma --input prisma/schema.prisma --output-dir docs/erd",
+    "erd": "liam erd build --format prisma --input prisma/schema.prisma && rm -rf docs/erd && mv dist docs/erd",
     "depcruise": "depcruise src --config .dependency-cruiser.cjs",
     "depcruise:svg": "depcruise src --config .dependency-cruiser.cjs --output-type dot | dot -T svg > docs/dependency-graph.svg"
   },
