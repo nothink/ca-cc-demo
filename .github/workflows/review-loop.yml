@@ -29,7 +29,8 @@ jobs:
   #    (コミット数ではなく起動回数で数える。Claudeは1実装で複数コミットを積むため)
   # ---------------------------------------------------------------------------
   round-guard:
-    if: ${{ !github.event.pull_request.draft && !contains(github.event.pull_request.labels.*.name, 'needs-human') }}
+    # Dependabot 起点の workflow にはリポジトリ secret(CLAUDE_CODE_OAUTH_TOKEN)が渡らないため対象外にする
+    if: ${{ github.actor != 'dependabot[bot]' && !github.event.pull_request.draft && !contains(github.event.pull_request.labels.*.name, 'needs-human') }}
     runs-on: ubuntu-latest
     outputs:
       round: ${{ steps.count.outputs.round }}
