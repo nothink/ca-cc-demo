@@ -43,6 +43,12 @@ jobs:
       - name: Prisma migrate deploy
         run: pnpm exec prisma migrate deploy
 
+      - name: Seed fixed users
+        run: pnpm db:seed
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
+
       - name: Lint (Biome)
         run: pnpm exec biome ci .
 

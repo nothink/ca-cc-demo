@@ -18,6 +18,14 @@ module.exports = {
       to: { path: "^src/infrastructure" },
     },
     {
+      name: "no-presentation-to-infrastructure",
+      severity: "error",
+      comment:
+        "presentation は infrastructure に依存してはならない(結線は src/main.ts と src/infrastructure/container.ts のみ)",
+      from: { path: "^src/presentation" },
+      to: { path: "^src/infrastructure" },
+    },
+    {
       name: "no-domain-to-usecase",
       severity: "error",
       comment:
@@ -46,8 +54,8 @@ module.exports = {
       dot: {
         collapsePattern: "node_modules/[^/]+",
       },
-      // `pnpm exec depcruise src --config .dependency-cruiser.cjs --output-type dot | dot -T svg > docs/dependency-graph.svg`
-      // でPhase1/Phase2それぞれの依存グラフをSVGとして出力し、形が変わっていないことを比較する
+      // `pnpm depcruise:svg` で依存グラフをSVG出力し、Phase1/Phase2 それぞれ
+      // docs/dependency-graph-phase1.svg / docs/dependency-graph-phase2.svg として保存して形を比較する
       archi: {
         collapsePattern:
           "^(src/domain|src/usecase|src/infrastructure/(prisma|drizzle)|src/presentation)/[^/]+",
