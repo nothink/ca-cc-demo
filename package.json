@@ -4,7 +4,7 @@
   "private": true,
   "description": "Clean Architecture × Claude Code demo (Todo/User with role-based permission)",
   "type": "module",
-  "packageManager": "pnpm@11.24.0",
+  "packageManager": "pnpm@11.28.5",
   "engines": {
     "node": ">=24"
   },
