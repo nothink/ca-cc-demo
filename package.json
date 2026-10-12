@@ -39,7 +39,7 @@
     "@liam-hq/cli": "^0.7.24",
     "@types/node": "^24.5.0",
     "@types/pg": "^8.23.1",
-    "dependency-cruiser": "^17.0.0",
+    "dependency-cruiser": "^18.0.0",
     "drizzle-kit": "^0.31.11",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
