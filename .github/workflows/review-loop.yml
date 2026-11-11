@@ -185,7 +185,7 @@ jobs:
           --health-timeout=3s
           --health-retries=10
       postgres:
-        image: postgres:17
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: app_test
