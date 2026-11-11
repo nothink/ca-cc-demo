@@ -104,7 +104,7 @@ jobs:
     outputs:
       approved: ${{ steps.verdict.outputs.approved }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -201,7 +201,7 @@ jobs:
       DATABASE_URL: mysql://root:root@127.0.0.1:3306/app_test
       POSTGRES_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/app_test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.HEAD_REF }}
           fetch-depth: 0
